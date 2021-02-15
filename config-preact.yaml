@@ -1,0 +1,101 @@
+# ---- preset paras ---- (for config only)
+test: False # True
+suffix: # shortcutX # copytesting # diffAd # countAll # CEInner # count # epoch=100 # count #_bce # SanityCheck # 'NoLrDecay'
+
+# ----- adversary ---------
+adversary: pgd # fgsm # fat # trades # pgd # gairat # trades # pgd # trades # trades # pgd # mart # trades # pgd # fgsm # pgd # gaussian #  pgd #  fgsm 
+eps: 12 # 16 # 30 
+pgd_alpha: 10 # 0.5
+pgd_iter: 2 # 20
+alpha: 1.0 # 
+repeat: 0 # 10
+rand_init: True
+fat_taus: [10, 0, 0] # 
+fat_milestones: [31, 61] # GAIRAT setting
+target:
+
+ad_test: pgd # fgsm # pgd # Support multiple evaluation like 'fgsm, gaussian': [s.strip() for s in ('fgsm, gaussian').split(',')]
+eps_test: 8 # 24 for mnist
+pgd_alpha_test: 2 # 1 # 2
+pgd_iter_test: 10 # 5
+
+# -- tracker --- 
+exTrack: True
+# would be extremely slow for TRADES because have to generate ad examples twice
+
+# --initializor --
+gain: 1.0 # 0.29
+epoch_switch: 0
+warmup: 0 # 5 # epochs
+lr2: 0.1
+lr2b: 0.01
+
+# additional metrics
+robust_metrics: [] # 'rb'
+
+class_eval: False # True
+
+# -- capacity --
+clean_repeat: 1 # 20 # 00 # deprecated later
+repeat_eps:
+
+# -- data --
+# train_subset_path: '/home/chengyu/Initialization/data_subsets/mean_rb_id_pgd10_epoch_friend_10000_balance+friend_1000_deer+frog.npy'
+
+# eval_subset_path: ['/home/chengyu/Initialization/data_subsets/mean_rb_id_pgd10_early_stop_problem.npy',
+#                '/home/chengyu/Initialization/data_subsets/mean_rb_id_pgd10_early_stop_friend.npy',]
+
+
+# ---- weights must be consistent with alpha! ----------
+# ---- alpha will not take any effect if set this! ------
+# alpha_sample_path: '/home/chengyu/Initialization/data_subsets/mean_rb_binary.npy'
+
+# lambda_sample_path: '/home/chengyu/Initialization/data_subsets/mean_rb_lambda_pgd10_epoch_tanh+1.npy'
+
+# weps_sample_path: '/home/chengyu/Initialization/data_subsets/mean_rb_weps_pgd10_epoch_binary_40k_+1_25-0_5.npy'
+# num_iter_sample_path: '/home/chengyu/Initialization/data_subsets/mean_rb_num_iter_pgd10_epoch_binary_2_4_8.npy'
+## Setting this will make both pgd_iter and pgd_alpha invalid
+
+# ---- weight start at some epoch
+# ---- will not work if weighted training not enabled
+# alpha_sample_path2: '/home/chengyu/Initialization/data_subsets/hard_5000_weights.npy'
+# alpha_sample_path2: '/home/chengyu/Initialization/data_subsets/hard_10000_weights.npy'
+# alpha_sample_path2: '/home/chengyu/Initialization/data_subsets/easy_10000_weights.npy'
+# epoch_mask: 90 # at this epoch, mask adversarial training on hard examples
+
+# ---- switch to clean or remove some data at some epoch
+# rb_early_stop: 'remove'
+# epoch_rb_early_stop: 25
+# # if provided, mask indices are hereby predetermined. No example tracker required.
+# subset_id_path: '/home/chengyu/Initialization/data_subsets/mean_rb_id_early_stop_wrong.npy'
+
+
+# ----- Regular paras ------
+dataset: cifar10 # mnist # cifar100
+classes: #  ['dog', 'cat']
+trainsize: # 20000 # 30000 # 45000
+testsize:
+data_dir: '/home/chengyu/Initialization/data'
+opt: sgd # adam # sgd # adam # rmsprop # adagrad 
+model: FixupPreActResNet18 # logistic # resnet #_woskip # dln11 # vgg11 # dln11 # resnet_fixup # dln11 # resnet_woskip # vgg11 # logistic #  resnet # _woaffine # _wobn # vgg11 # _bn # resnet  #
+bn: True # False
+depth: 20
+width: 64
+scheduler: multistep
+resume: False
+epochs: 160 # 100 # 200 
+milestones: [80, 120] # [30, 60]  # [100, 150] #  step lr scheduler
+lr: 0.1 # 0.001 # - adam
+wd: 0.0005 # 05 # # 0
+momentum: 0.9 # .9 # .9   # momentum seems to cause instability 
+batch_size: 128 # 32
+gamma: 0.1 # lr decay factor
+
+gpu_id: 7
+manualSeed: # 7
+nlogs: 0 # 0: default # epochs
+state_path: #  'sgd_resnet20_gain=1_0_ad_pgd_5_wd=0_0005_mom=0_9/model.pt'
+best: 'robust'
+traintest: True
+save_model: False # True # Save the model after completing training?
+save_interval: 0
