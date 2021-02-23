@@ -23,8 +23,6 @@ from src.utils import Dict2Obj
 from robustCertify import robust_certify
 
 def train_wrap(**config):
-    # nlogs: number of logs required, realized by dynamically adjust batch print size
-
     config = Dict2Obj(config)
 
     start = time.time()
@@ -53,26 +51,11 @@ def train_wrap(**config):
         with open(config.train_subset_path, 'rb') as f:
             trainsubids = np.load(f)
 
-    sampleweights = dict()
-    for name_weight in ['lambda', 'reg', 'weps', 'num_iter']:
-        path_weight = '%s_sample_path' % name_weight
-        if hasattr(config, path_weight) and getattr(config, path_weight):
-            with open(getattr(config, path_weight), 'rb') as f:
-                sampleweights[name_weight] = np.load(f)
-
-    trainextrasubids = []
-    if hasattr(config, 'eval_subset_path') and config.eval_subset_path:
-        for path in config.eval_subset_path:
-            with open(path, 'rb') as f:
-                trainextrasubids.append(np.load(f))
     loaders = get_loaders(dataset=config.dataset, classes=config.classes, batch_size=config.batch_size,
                           trainsize=config.trainsize, testsize=config.testsize,
-                          trainsubids=trainsubids, trainextrasubids=trainextrasubids,
-                          weights=sampleweights,
+                          trainsubids=trainsubids,
                           data_dir=config.data_dir,
                           config=config)
-    config.batch_print = max(1, len(loaders.trainloader)//(config.nlogs//config.epochs))
-
 
     ## --------------------------------- criterion ------------------------------- 
     config.reduction = 'none' # Always prevent reduction, do reduction in training script

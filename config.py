@@ -16,10 +16,8 @@ from fractions import Fraction
 def check_num(num):
     if type(num) in [float, int]:
         return num
-
     if isinstance(num, str):
         return float(Fraction(num))
-
     raise TypeError(num)
 
 
@@ -39,8 +37,7 @@ def read_config(config_file='config.yaml'):
         if not config['bn']:
             config['model'] = '%s_fixup' % config['model']
 
-    for key in ['eps', 'eps_test', 'repeat_eps', 'gain', 'lr', 'wd', 'momentum', 'gamma', 'lmr', 'repeat', 'mixup_alpha', 'alpha',
-                'label_smoothing', 'loss_flooding']:
+    for key in ['eps', 'eps_test', 'gain', 'lr', 'wd', 'momentum', 'gamma', 'alpha']:
         if key in config and config[key] is not None:
             config[key] = check_num(config[key])
 
@@ -97,25 +94,14 @@ def read_config(config_file='config.yaml'):
         config['checkpoint'] += ('_wd=%g' % config['wd']).replace('.', '_')
     if config['momentum'] > 0:
         config['checkpoint'] += ('_mom=%g' % config['momentum']).replace('.', '_')
-    if config['mixup_alpha'] > 0:
-        config['checkpoint'] += ('_mixup=%g' % config['mixup_alpha']).replace('.', '_')
-        if config['mixup_rand']:
-            config['checkpoint'] += '_rand'
-    if config['lmr'] > 0:
-        config['checkpoint'] += ('_lmr=%g' % config['lmr']).replace('.', '_')
     if config['ad_test'] != 'fgsm':
         config['checkpoint'] += '_%s' % config['ad_test']
         if 'pgd' in config['ad_test'] and config['pgd_iter_test'] != 5:
             config['checkpoint'] += '_%i' % config['pgd_iter_test']
     if config['eps_test'] != 8:
         config['checkpoint'] += '_epst=%i' % config['eps_test']
-    if config['epoch_switch'] > 0:
-        config['checkpoint'] += ('_2sgd@%i' % config['epoch_switch']).replace('.', '_')
-    if not config['nlogs']:
-        config['nlogs'] = config['epochs']
     if config['test']:
         config['checkpoint'] = 'test_' + config['checkpoint']
-        config['nlogs'] = config['epochs']
     del config['test']
     if config['classes']:
         config['checkpoint'] += '_%s' % ('-'.join(config['classes']))
@@ -123,50 +109,8 @@ def read_config(config_file='config.yaml'):
         config['checkpoint'] += '_ntrain=%i' % config['trainsize']
     if config['testsize']:
         config['checkpoint'] += '_ntest=%i' % config['testsize']
-    if 'clean_repeat' in config and config['clean_repeat'] > 1:
-        config['checkpoint'] += '_repeat=%i' % config['clean_repeat']
     if 'train_subset_path' in config and config['train_subset_path']:
         config['checkpoint'] += '_sub=%s' % config['train_subset_path'].split('/')[-1].split('.')[0]
-    if 'eval_subset_path' in config and config['eval_subset_path']:
-        config['checkpoint'] += '_extra_eval'
-    if 'alpha_sample_path' in config and config['alpha_sample_path']:
-        # config['checkpoint'] += '_weighted'
-        config['checkpoint'] += '_alpha=%s' % config['alpha_sample_path'].split('/')[-1].split('.')[0]
-        # if 'label_smoothing' not in config and 'loss_flooding' not in config and config['adversary'] != 'trades':
-        if 'pgd' in config['adversary'] or 'fgsm' in config['adversary']:
-            if config['alpha'] != 1.:
-                regex = r'(?<=weights_)(\d_\d+)(?=\.npy)'
-                alpha_ = float(re.findall(regex, config['alpha_sample_path'])[0].replace('_', '.'))
-                assert(alpha_ == config['alpha']), 'alpha sample path %s not consistent with alpha %g' % (config['alpha_sample_path'], config['alpha'])
-    if 'lambda_sample_path' in config and config['lambda_sample_path']:
-        config['checkpoint'] += '_lambda=%s' % config['lambda_sample_path'].split('/')[-1].split('.')[0]
-    if 'weps_sample_path' in config and config['weps_sample_path']:
-        config['checkpoint'] += '_weps=%s' % config['weps_sample_path'].split('/')[-1].split('.')[0]
-    if 'num_iter_sample_path' in config and config['num_iter_sample_path']:
-        config['checkpoint'] += '_witer=%s' % config['num_iter_sample_path'].split('/')[-1].split('.')[0]
-
-    if 'epoch_mask' in config and config['epoch_mask']:
-        config['checkpoint'] += '_at_%i' % config['epoch_mask']
-        assert('alpha_sample_path2' in config and config['alpha_sample_path2'])
-    if 'rb_early_stop' in config and config['rb_early_stop']:
-        config['checkpoint'] += '_early_stop_%s_at_%i' % (config['rb_early_stop'], config['epoch_rb_early_stop'])
-        if 'subset_id_path' in config and config['subset_id_path']:
-            config['checkpoint'] += '_preset=%s' % config['subset_id_path'].split('/')[-1].split('.')[0]
-        else:
-            assert(config['exTrack'])
-
-    if 'label_smoothing' in config and config['label_smoothing']:
-        if 'reg_sample_path' in config and config['reg_sample_path']:
-            # use hyper parameters in weights
-            # config['checkpoint'] += '_ls'
-            config['checkpoint'] += '_ls=%s' % config['reg_sample_path'].split('/')[-1].split('.')[0]
-        else:
-            config['checkpoint'] += '_ls=%g' % config['label_smoothing']
-    if 'loss_flooding' in config and config['loss_flooding']:
-        if 'reg_sample_path' in config and config['reg_sample_path']:
-            config['checkpoint'] += '_lf'
-        else:
-            config['checkpoint'] += '_lf=%g' % config['loss_flooding']
     if config['suffix']:
         config['checkpoint'] += '_%s' % config['suffix']
     del config['suffix']

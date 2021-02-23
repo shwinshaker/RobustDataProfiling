@@ -52,12 +52,10 @@ class AdTrainer:
             logs_e.extend([self.meters[m].avg for m in self.extra_metrics]) # keep the order
             self.logger_e.append(logs_e)
 
-        ## In-situ masked subset
+        ## per-example learned info
         if self.config.exTrack:
-            # make a record
             self.exLog.step(epoch)
 
-        ## epoch is current epoch + 1
         self.epoch = epoch + 1
 
     def reset(self, epoch):
@@ -91,7 +89,7 @@ class AdTrainer:
             return
 
 
-        if self.config.adversary in ['gaussian', 'fgsm', 'pgd', 'fgsm_manifold', 'pgd_manifold', 'aa']:
+        if self.config.adversary in ['gaussian', 'fgsm', 'pgd', 'aa']:
             self._loss = self._ad_loss
 
             # log for sample robust correctness
@@ -108,11 +106,6 @@ class AdTrainer:
         # other things not supported currectly..
         if self.config.target:
             raise NotImplementedError('Targeted attack not supported! TODO..')
-        # if hasattr(self.config, 'alpha_sample_path') and self.config.alpha_sample_path:
-        #     # for trades, this was implemented, but try incorporate into the loss function
-        #     raise NotImplementedError('Sample-wise trading not supported! TODO..')
-        if hasattr(self.config, 'reg_sample_path') and self.config.reg_sample_path:
-            raise NotImplementedError('Sample-wise regularization Not supported!')
 
         if self.config.adversary == 'trades':
             self._loss = self._trades_loss
@@ -131,7 +124,6 @@ class AdTrainer:
         self.extra_metrics = ['Train-Loss-Ad', 'Train-Acc-Ad']
         self.logger_e.set_names(base_names + self.extra_metrics)
         self.meters = dict([(m, AverageMeter()) for m in self.extra_metrics])
-        return
 
         if self.config.exTrack:
             raise NotImplementedError('Example tracking not supported! TODO..')
@@ -144,12 +136,7 @@ class AdTrainer:
 
     def _clean_loss(self, inputs, labels, weights, epoch=None):
         outputs = self.net(inputs)
-        if 'reg' in weights:
-            loss = self.criterion(outputs,
-                                  labels,
-                                  weights=weights['reg'].to(self.device))
-        else:
-            loss = self.criterion(outputs, labels)
+        loss = self.criterion(outputs, labels)
         prec1, = accuracy(outputs.data, labels.data)
     
         # keep for record
@@ -170,63 +157,28 @@ class AdTrainer:
         # -------- clean loss
         loss = 0.
         # if pure ad loss and sample-wise alpha not enabled, don't have to do this part
-        if self.config.alpha < 1.0 or 'alpha' in weights:
+        if self.config.alpha < 1.0:
             loss = self._clean_loss(inputs, labels, weights)
 
         # ------- ad loss
-        eps_weight = None
-        if 'weps' in weights:
-            eps_weight = weights['weps']
-
-        pgd_alpha = self.config.pgd_alpha
-        pgd_iter = self.config.pgd_iter
-        adversary = self.config.adversary
-        if 'num_iter' in weights:
-            assert(self.config.adversary == 'pgd'), 'adversary %s not supported in instance-wise iteration mode!'
-            adversary = 'pgd_custom'
-            pgd_iter = weights['num_iter']
-            pgd_alpha = self.__get_pgd_alpha(pgd_iter)
-
         self.net.eval()
         ctr = nn.CrossEntropyLoss() # Don't change the criterion in adversary generation part -- maybe change it later
         inputs_ad = attack(self.net, ctr, inputs, labels, weight=eps_weight,
-                           adversary=adversary,
+                           adversary=self.config.adversary,
                            eps=self.config.eps,
-                           pgd_alpha=pgd_alpha,
-                           pgd_iter=pgd_iter,
+                           pgd_alpha=self.config.pgd_alph,
+                           pgd_iter=self.config.pgd_iter,
                            randomize=self.config.rand_init,
                            target=self.target,
                            config=self.config)
         self.net.train()
         outputs_ad = self.net(inputs_ad)
-
-        if 'reg' in weights:
-            loss_ad = self.criterion(outputs_ad,
-                                     labels,
-                                     weights=weights['reg'].to(self.device))
-        else:
-            loss_ad = self.criterion(outputs_ad, labels)
-            # print('bce!')
-            # loss_ad = bce_loss(outputs_ad, labels, reduction='none')
+        loss_ad = self.criterion(outputs_ad, labels)
 
         # -------- combine two loss
-        if 'alpha' in weights:
-            # sample-wise weighting
-            assert(loss.size(0) == inputs.size(0)), (loss.size(0), inputs.size(0))
-            alpha = weights['alpha'].to(self.device)
-            assert(loss.size() == loss_ad.size() == alpha.size()), (loss.size(), loss_ad.size(), alpha.size())
-        else:
-            alpha = self.config.alpha
-
-        if 'lambda' in weights:
-            lmbd = weights['lambda'].to(self.device)
-        else:
-            lmbd = torch.ones(inputs.size(0)).to(self.device)
-
-        assert(loss_ad.size() == lmbd.size()), (loss_ad.size(), lmbd.size())
-        loss *= (1 - alpha)
-        loss += alpha * loss_ad * lmbd / lmbd.sum()
-        loss = loss.sum()
+        loss *= (1 - self.config.alpha)
+        loss += alpha * loss_ad
+        loss = loss.mean()
 
         # -------- recording
         prec1_ad, = accuracy(outputs_ad.data, labels.data)
@@ -254,10 +206,6 @@ class AdTrainer:
         return outputs_ad
 
     def _trades_loss(self, inputs, labels, weights, epoch=None):
-        # note: The official implementation use CE + KL * beta - amounts to alpha~= 0.85
-        #       Previously we use (1-alpha) * CE + alpha * KL
-        # integrate clean loss in trades loss
-        # sample-weighting in trades loss - later
         loss, outputs_ad = trades_loss(self.net, inputs, labels, weights,
                                       eps=self.config.eps,
                                       alpha=self.config.pgd_alpha,
@@ -271,7 +219,7 @@ class AdTrainer:
         self.meters['Train-Loss-Ad'].update(loss.item(), inputs.size(0))
         self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
         if self.config.exTrack:
-            # raise NotImplementedError('Generate ad examples using PGD, otherwise not fair!')
+            # Generate ad examples using PGD, otherwise not fair!
             outputs_ad = self.__get_pgd_ad(inputs, labels)
             self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
 

@@ -17,15 +17,6 @@ trim() {
 config=$1 
 [[ -z $config ]] && config="config.yaml"
 
-# gpu_id='5'
-# gain=1.0
-# echo $gain" - "$gpu_id
-# sed -i "s/^gain: [0-9]\.[0-9]/gain: $gain/g" config.yaml
-# # s=${gain//\./_}
-# # echo $s
-# sed -i "s/^gpu_id: [0-9]/gpu_id: $gpu_id/g" config.yaml
-# # ./launch.sh
-
 python config.py -c $config
 [[ $? -ne 0 ]] && echo 'exit' && exit 2
 checkpoint=$(cat tmp/path.tmp)
@@ -39,10 +30,6 @@ cp -r src $path
 subset_path="$(grep '^train_subset_path' $config | awk '{print$2}' | sed -e "s/^'//" -e "s/'$//")"
 if [ ! -z $subset_path ]; then
     cp $subset_path $path
-fi
-weight_path="$(grep '^alpha_sample_path' $config | awk '{print$2}' | sed -e "s/^'//" -e "s/'$//")"
-if [ ! -z $weight_path ]; then
-    cp $weight_path $path
 fi
 cur=$(pwd)
 cd $path

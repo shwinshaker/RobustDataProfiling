@@ -11,9 +11,6 @@ def test(testloader, net, criterion, config, classes=None):
     top1 = AverageMeter()
     net.eval()
 
-    if hasattr(config, 'class_eval') and config.class_eval:
-        top1_class = GroupMeter(classes)
-    
     for i, tup in enumerate(testloader, 0):
         if len(tup) == 2:
             inputs, labels = tup
@@ -27,14 +24,7 @@ def test(testloader, net, criterion, config, classes=None):
         losses.update(loss.item(), inputs.size(0))        
         top1.update(prec1.item(), inputs.size(0))
 
-        if hasattr(config, 'class_eval') and config.class_eval:
-            top1_class.update(outputs, labels)
-
-    extra_metrics = dict()
-    if hasattr(config, 'class_eval') and config.class_eval:
-        extra_metrics['class_acc'] = top1_class.output_group()
-        
-    return losses.avg, top1.avg, extra_metrics
+    return losses.avg, top1.avg
 
 
 class AverageMeter:

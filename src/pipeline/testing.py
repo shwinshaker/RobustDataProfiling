@@ -48,12 +48,7 @@ class Tester:
 
         if config.ad_test == 'aa':
             # use alternative tester
-            if hasattr(config, 'class_eval') and config.class_eval:
-                raise NotImplementedError('Per class evaluation not supported in aa..')
-            if hasattr(config, 'robust_metrics') and config.robust_metrics:
-                raise NotImplementedError('External evaluation not supported in aa..')
-            self.__aa_setup()
-            # raise NotImplementedError('auto attack takes additional 8 hours..')
+            self.__aa_setup() # auto attack takes additional 8 hours..
 
         # basic logs 
         base_names = ['Epoch', 'Mini-batch', 'lr', 'Time-elapse(Min)']
@@ -62,31 +57,7 @@ class Tester:
                    'Train-Loss-Ad', 'Test-Loss-Ad',
                    'Train-Acc', 'Test-Acc',
                    'Train-Acc-Ad', 'Test-Acc-Ad']
-        for m in config.robust_metrics:
-            metrics.append('Train-%s' % m)
-            metrics.append('Test-%s' % m)
         self.logger.set_names(base_names + metrics)
-
-        # extra logs for subsets in training set
-        if hasattr(self.loaders, 'trainextraloaders'):
-            self.logger_extra = Logger('log_trainEval.txt', title='train extra log', resume=config.resume)
-            metrics = []
-            for i in range(len(self.loaders.trainextraloaders)):
-                metrics.extend(['Train-Loss-%i' % i,
-                                'Train-Loss-Ad-%i' % i,
-                                'Train-Acc-%i' % i,
-                                'Train-Acc-Ad-%i' % i])
-                for m in config.robust_metrics:
-                    metrics.append('Train-%s-%i' % (m, i))
-            self.logger_extra.set_names(base_names + metrics)
-
-        # extra logs for class-wise evaluation
-        if hasattr(config, 'class_eval') and config.class_eval:
-            self.logger_c = Logger('log_class.txt', title='log for class-wise acc', resume=config.resume)
-            metrics = ['Test-Acc-%s' % c for c in loaders.classes]
-            if config.adversary:
-                metrics.extend(['Test-Acc-%s-Ad' % c for c in loaders.classes])
-            self.logger_c.set_names(base_names + metrics)
 
         self.time_start = time_start
         self.last_end = 0.
@@ -99,10 +70,6 @@ class Tester:
         if config.resume:
             self.best_acc = get_best_acc(option=self.best)
             print('> Best: %.2f' % (self.best_acc))
-        # self.save_model = False
-        # if config.save_model:
-        #     self.save_model = True
-        #     # self.best_model = None
 
     def __get_lr(self):
         lrs = [param_group['lr'] for param_group in self.optimizer.param_groups]
@@ -113,7 +80,6 @@ class Tester:
         return test(loader, self.net, self.criterion, self.config, classes=self.loaders.classes)
 
     def __ad_test(self, loader):
-        # return ad_test(loader, copy.deepcopy(self.net), self.criterion, self.config, classes=self.loaders.classes)
         return ad_test(loader, self.net, self.criterion, self.config, classes=self.loaders.classes)
 
     def __aa_setup(self):
@@ -155,26 +121,21 @@ class Tester:
         """
 
         # train - test
-        train_loss, train_prec1, train_ex_metrics = 0, 0, dict()
-        train_loss_ad, train_prec1_ad, train_ex_metrics_ad = 0, 0, dict()
+        train_loss, train_prec1 = 0, 0
+        train_loss_ad, train_prec1_ad = 0, 0
         if self.config.traintest:
-            train_loss, train_prec1, train_ex_metrics = self.__test(self.loaders.traintestloader)
-            # if self.config.ad_test != 'aa':
-            #     train_loss_ad, train_prec1_ad, train_ex_metrics_ad = self.__ad_test(self.loaders.traintestloader)
-            # else:
-            #     # dummy. Evaluating on trainset not supported in aa
-            #     pass
+            train_loss, train_prec1 = self.__test(self.loaders.traintestloader)
             if self.config.ad_test == 'aa':
-                train_loss_ad, train_prec1_ad, train_ex_metrics_ad = self.__ad_test_aa(mode='train')
+                train_loss_ad, train_prec1_ad = self.__ad_test_aa(mode='train')
             else:
-                train_loss_ad, train_prec1_ad, train_ex_metrics_ad = self.__ad_test(self.loaders.traintestloader)
+                train_loss_ad, train_prec1_ad = self.__ad_test(self.loaders.traintestloader)
 
         # test
-        test_loss, test_prec1, test_ex_metrics = self.__test(self.loaders.testloader)
+        test_loss, test_prec1 = self.__test(self.loaders.testloader)
         if self.config.ad_test == 'aa':
-            test_loss_ad, test_prec1_ad, test_ex_metrics_ad = self.__ad_test_aa(mode='test')
+            test_loss_ad, test_prec1_ad = self.__ad_test_aa(mode='test')
         else:
-            test_loss_ad, test_prec1_ad, test_ex_metrics_ad = self.__ad_test(self.loaders.testloader)
+            test_loss_ad, test_prec1_ad = self.__ad_test(self.loaders.testloader)
 
         # best
         self.__update_best(epoch, test_prec1, test_prec1_ad)
@@ -187,31 +148,7 @@ class Tester:
                  train_loss_ad, test_loss_ad,
                  train_prec1, test_prec1,
                  train_prec1_ad, test_prec1_ad]
-        for m in self.config.robust_metrics:
-            logs.extend([train_ex_metrics_ad['rb_metric'][m], test_ex_metrics_ad['rb_metric'][m]])
         self.logger.append(logs)
-
-        # evaluation on each class
-        if hasattr(self.config, 'class_eval') and self.config.class_eval:
-            logs = [_ for _ in logs_base]
-            logs += test_ex_metrics['class_acc'] + test_ex_metrics_ad['class_acc']
-            self.logger_c.append(logs)
-
-        # evaluation on extra loaders
-        if hasattr(self.loaders, 'trainextraloaders'):
-            logs = [_ for _ in logs_base]
-            for trainextraloader in self.loaders.trainextraloaders:
-                train_loss, train_prec1, train_ex_metrics = self.__test(trainextraloader)
-                train_loss_ad, train_prec1_ad, train_ex_metrics_ad = self.__ad_test(trainextraloader)
-                logs += [train_loss, train_loss_ad,
-                         train_prec1, train_prec1_ad]
-                for m in self.config.robust_metrics:
-                    logs.append(train_ex_metrics_ad['rb_metric'][m])
-            self.logger_extra.append(logs)
 
     def close(self):
         self.logger.close()
-        if hasattr(self.loaders, 'trainextraloaders'):
-            self.logger_extra.close()
-        if hasattr(self.config, 'class_eval') and self.config.class_eval:
-            self.logger_c.close()
