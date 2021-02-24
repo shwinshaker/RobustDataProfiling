@@ -44,11 +44,11 @@
 
 * Repeat the above process to get a more accurate estimation
 
-* An estimation of the normalized problematic rank averaged by $10$ repeated experiments with random intialization (PGD-$10$ training for pre-activation ResNet-$18$) has been pre-calculated in `prob_rank.npy`
+* An estimation of the normalized problematic rank averaged by 10 repeated experiments with random intialization (PGD-10 training for pre-activation ResNet-18) has been pre-calculated in `prob_rank.npy`
 
 ## Adversarial training on friendly data only
 
-* Select the top $$k$$ friendly examples based on problematic rank estimation
+* Select the top k friendly examples based on problematic rank estimation
 
   ```
   import numpy as np
@@ -60,7 +60,7 @@
   ```
 
 * Set `train_subset_path` to the path of this index file to conduct adversarial training on this subset only
-* A index subset of the top $25000$ friendly examples (class-balanced sampling) has been pre-calculated in `data_subsets/id_friend_25000_balance.npy`
+* A index subset of the top 25000 friendly examples (class-balanced sampling) has been pre-calculated in `data_subsets/id_friend_25000_balance.npy`
 
 ## Citation
 
