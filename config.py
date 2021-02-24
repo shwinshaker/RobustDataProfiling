@@ -37,7 +37,7 @@ def read_config(config_file='config.yaml'):
         if not config['bn']:
             config['model'] = '%s_fixup' % config['model']
 
-    for key in ['eps', 'eps_test', 'gain', 'lr', 'wd', 'momentum', 'gamma', 'alpha']:
+    for key in ['eps', 'eps_test', 'lr', 'wd', 'momentum', 'gamma', 'alpha']:
         if key in config and config[key] is not None:
             config[key] = check_num(config[key])
 
@@ -61,21 +61,18 @@ def read_config(config_file='config.yaml'):
     else:
         if config['bn']:
             config['checkpoint'] += '_bn'
-    config['checkpoint'] += '_gain=%s' % (str(config['gain']).replace('.', '_'))
 
     if config['dataset'] != 'cifar10':
         config['checkpoint'] = config['dataset'] + '_' + config['checkpoint']
     if config['adversary']:
         config['checkpoint'] += '_ad'
         config['checkpoint'] += '_%s' % config['adversary']
-        if config['adversary'] in ['pgd', 'trades', 'mart', 'fat', 'gairat']:
+        if config['adversary'] in ['pgd', 'trades']:
             config['checkpoint'] += '_%i' % config['pgd_iter']
-        if config['repeat']:
-            config['checkpoint'] += '_rp=%i' % config['repeat']
         if config['eps'] != 8:
             config['checkpoint'] += '_eps=%i' % config['eps']
         if 'pgd' in config['adversary'] or 'fgsm' in config['adversary']:
-            # no para alpha if adversary == trades, llr, or mart
+            # no para alpha if adversary == trades
             if config['alpha'] != 0.5:
                 config['checkpoint'] += ('_alpha=%g' % config['alpha']).replace('.', '_')
         if config['adversary'] == 'fat':
@@ -103,8 +100,6 @@ def read_config(config_file='config.yaml'):
     if config['test']:
         config['checkpoint'] = 'test_' + config['checkpoint']
     del config['test']
-    if config['classes']:
-        config['checkpoint'] += '_%s' % ('-'.join(config['classes']))
     if config['trainsize']:
         config['checkpoint'] += '_ntrain=%i' % config['trainsize']
     if config['testsize']:

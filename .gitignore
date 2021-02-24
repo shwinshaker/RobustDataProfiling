@@ -1,3 +1,9 @@
+##
+checkpoints/
+data/
+log.txt
+tmp/
+
 .DS_Store
 ._.DS_Store
 

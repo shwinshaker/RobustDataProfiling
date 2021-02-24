@@ -1,16 +1,14 @@
-# ---- preset paras ---- (for config only)
-test: False # True
+# ---- preset paras ---- (for test only)
+test: True
 suffix: # custom suffix for checkpoint name
 
 # ----- adversary ---------
-adversary: pgd # fgsm # trades # fat # mart # gairat
+adversary: pgd # fgsm # trades
 eps: 8
 pgd_alpha: 2
 pgd_iter: 10
-alpha: 1.0  # interpolation between clean loss and ad loss
+alpha: 1.0  # interpolation between clean loss and ad loss # not supported for TRADES
 rand_init: True
-fat_taus: [10, 0, 0] #  FAT setting
-fat_milestones: [31, 61] # GAIRAT setting
 target: # Target attack
 
 ad_test: pgd # fgsm
@@ -22,21 +20,21 @@ pgd_iter_test: 10
 exTrack: True # would be slow for TRADES because have to generate ad examples twice, one for PGD-10
 
 # -- subset training with specified indices --
-# train_subset_path: '/home/chengyu/Initialization/data_subsets/id_friend_25000_balance.npy'
+train_subset_path: '/home/chengyu/RobustDataProfiling/data_subsets/id_friend_25000_balance.npy'
 
 # ----- Regular paras ------
 dataset: cifar10 # mnist
 trainsize: # random subset
 testsize:
-data_dir: '/home/chengyu/Initialization/data'
+data_dir: '/home/chengyu/RobustDataProfiling/data'
 opt: sgd # adam
-model: PreActResNet18 # logistic # resnet #_woskip # dln11 # vgg11 # dln11 # resnet_fixup # dln11 # resnet_woskip # vgg11 # logistic #  resnet # _woaffine # _wobn # vgg11 # _bn # resnet  #
-bn: True
-depth: 20 # 
-width: 64
+model: PreActResNet18 # wrn
+bn: True # only valid for vgg
+depth: 16  # only valid for wrn
+width: 10 # only valid for wrn
 scheduler: multistep
-resume: False
-epochs: 160
+resume: False # resume training from a break point?
+epochs: 5 # 160
 milestones: [80, 120]
 lr: 0.1 # 0.001 - adam
 wd: 0.0005
@@ -44,10 +42,10 @@ momentum: 0.9
 batch_size: 128
 gamma: 0.1
 
-gpu_id: 7
-manualSeed: # 7
-state_path: #  'sgd_resnet20_gain=1_0_ad_pgd_5_wd=0_0005_mom=0_9/model.pt'
-best: 'robust'
-traintest: True
+gpu_id: 3
+manualSeed: # 7 # specify random seed, leave blank if none
+state_path: # pre-trained model
+best: 'robust' # use robust accuracy to identify the best model during training
+traintest: True # separate training subset for evaluation
 save_model: False # True # Save the model after completing training?
 save_interval: 0

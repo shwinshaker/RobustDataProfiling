@@ -4,8 +4,55 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
+import time
+from . import Logger, AverageMeter
 
-__all__ = ['ExampleTracker']
+__all__ = ['AvgTracker', 'ExampleTracker']
+
+
+class AvgTracker:
+    """
+        Track epoch-wise average stats of various metrics
+    """
+
+    def __init__(self, name, optimizer, metrics=[], time_start=None, config=None):
+        self.optimizer = optimizer
+        self.metrics = metrics
+        self.config = config
+        if time_start is not None:
+            self.time_start = time_start
+        else:
+            self.time_start = time.time()
+
+        base_names = ['Epoch', 'Mini-batch', 'lr', 'Time-elapse(Min)']
+        self.logger = Logger('%s.txt' % name,
+                             title='log for deprecated metrics',
+                             resume=self.config.resume)
+        self.logger.set_names(base_names + self.metrics)
+        self.meters = dict([(m, AverageMeter()) for m in self.metrics])
+
+    def update(self, dic, size):
+        for key in dic:
+            self.meters[key].update(dic[key], size)
+
+    def step(self, epoch, i):
+        time_elapse = (time.time() - self.time_start)/60
+        logs = [epoch, i, self.__get_lr(), time_elapse]
+        logs.extend([self.meters[m].avg for m in self.metrics]) # keep the order
+        self.logger.append(logs)
+
+    def reset(self):
+        for m in self.meters:
+            self.meters[m].reset()
+
+    def __get_lr(self):
+        lrs = [param_group['lr'] for param_group in self.optimizer.param_groups]
+        assert(len(lrs) == 1)
+        return lrs[0]
+
+    def close(self):
+        self.logger.close()
+
 
 class ExampleTracker:
     """

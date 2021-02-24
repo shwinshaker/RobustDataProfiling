@@ -8,7 +8,7 @@ from ..adversary import AAAttacker
 import time
 import copy
 
-from ..analyses import load_log
+from ..utils import load_log
 import numpy as np
 import os
 

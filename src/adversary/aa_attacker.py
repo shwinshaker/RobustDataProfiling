@@ -11,8 +11,9 @@ import torchvision.transforms as transforms
 from ..preprocess import dataset_stats
 
 class AAAttacker:
-    """
-        default setting aligned with example in auto attack repo
+    """ 
+        wrapping class for autoattack setup
+            default setting aligned with example in auto attack repo
     """
     def __init__(self, net, eps=8.,
                  normalize=True,
@@ -23,7 +24,7 @@ class AAAttacker:
                  path='.',
                  log_path=None,
                  dataset='cifar10', batch_size=128, device=None,
-                 data_dir='/home/jingbo/chengyu/Initialization/data'):
+                 data_dir='./data'):
 
         self.net = net
         self.eps = eps / 255.

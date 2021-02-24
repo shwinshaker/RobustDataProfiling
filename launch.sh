@@ -14,11 +14,13 @@ trim() {
   echo "$s"
 }
 
+# -------- config - specify checkpoint name, check paths, check numbers, etc.. --------
 config=$1 
 [[ -z $config ]] && config="config.yaml"
-
 python config.py -c $config
 [[ $? -ne 0 ]] && echo 'exit' && exit 2
+
+# -------- copy everything --------
 checkpoint=$(cat tmp/path.tmp)
 path="checkpoints/$checkpoint"
 echo $path
@@ -32,6 +34,8 @@ if [ ! -z $subset_path ]; then
     cp $subset_path $path
 fi
 cur=$(pwd)
+
+# -------- start training --------
 cd $path
 if [ $(cat config.yaml | grep "^test:" | awk '{print$2}') == 'True' ]; then
     python main.py | tee train.out

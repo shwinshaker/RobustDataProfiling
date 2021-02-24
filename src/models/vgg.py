@@ -12,7 +12,6 @@ class VGG(nn.Module):
         super(VGG, self).__init__()
         self.gain = gain
         self.features = features
-        print(out)
         self.classifier = nn.Linear(out, num_classes)
         self._initialize_weights()
 

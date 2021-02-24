@@ -51,7 +51,7 @@ def train_wrap(**config):
         with open(config.train_subset_path, 'rb') as f:
             trainsubids = np.load(f)
 
-    loaders = get_loaders(dataset=config.dataset, classes=config.classes, batch_size=config.batch_size,
+    loaders = get_loaders(dataset=config.dataset, batch_size=config.batch_size,
                           trainsize=config.trainsize, testsize=config.testsize,
                           trainsubids=trainsubids,
                           data_dir=config.data_dir,

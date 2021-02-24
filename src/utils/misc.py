@@ -1,10 +1,70 @@
 #!./env python
 import torch
+import torch.nn as nn
+import numpy as np
+import bottleneck as bn
+import os
+import warnings
 
-__all__ = ['ravel_state_dict', 'ravel_parameters',
+import src.models as models
+from src.models import get_vgg
+
+__all__ = ['load_log', 'get_net', 'ravel_state_dict', 'ravel_parameters',
            'o_dedup', 'str2bool',
            'get_distance_matrix', 'get_equivalence_matrix',
            'DeNormalizer', 'Normalizer', 'Dict2Obj', 'is_in']
+
+def load_log(logfile, nlogs=None, window=1, interval=None):
+    if not os.path.isfile(logfile):
+        warnings.warn('%s not found.' % logfile)
+        return None
+
+    with open(logfile, 'r') as f:
+        header = f.readline().strip().split()
+    data = np.loadtxt(logfile, skiprows=1)
+    if data.size == 0:
+        return None
+    if len(data.shape) == 1:
+        data = np.expand_dims(data, axis=0)
+
+    if interval is not None:
+        data = data[::interval]
+    if not nlogs: nlogs = data.shape[0]
+    data = data[:nlogs]
+
+    def smooth(record):
+        return bn.move_mean(record, window=window)
+    return dict([(h, smooth(data[:, i])) for i, h in enumerate(header)])
+
+
+def get_net(path, num_classes, n_channel, device, model='PreActResNet18', bn=True, depth=20, width=16, feature=None, state='model.pt', parallel=False):
+    state_dict = torch.load('%s/%s' % (path, state), map_location=device)
+    if 'vgg' in model:
+        net = get_vgg(model=model, batch_norm=bn, num_classes=num_classes, n_channel=n_channel, gain=1.0, dataset='cifar10').to(device)
+    elif model in ['PreActResNet18']:
+        net = models.__dict__[model]().to(device)
+    elif 'wrn' in model:
+        net = models.__dict__[model](depth=depth, widen_factor=width, num_classes=num_classes, n_channel=n_channel).to(device)
+    else:
+        raise KeyError(model)
+
+    if parallel:
+        # model is trained on multiple gpu, named after 'module.'
+        net = torch.nn.DataParallel(net)
+
+    net.load_state_dict(state_dict)
+    net.eval()
+
+    model = net
+    if feature:
+        feature = copy.deepcopy(net)
+        feature.fc = nn.Identity()
+        model = {'net': net,
+                 'feature': feature,
+                 'classifier': copy.deepcopy(net.fc)}
+        model = Dict2Obj(model)
+
+    return model
 
 class Dict2Obj:
     """

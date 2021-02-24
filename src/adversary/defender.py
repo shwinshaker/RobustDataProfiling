@@ -3,14 +3,17 @@
 import torch
 import torch.nn as nn
 from ..utils import Logger, AverageMeter, accuracy
-from ..utils import ExampleTracker
+from ..utils import ExampleTracker, AvgTracker
 from . import attack, scale_step
-from .loss import trades_loss, llr_loss, mart_loss, bce_loss, fat_loss, gairat_loss
+from .loss import trades_loss
 import time
 
 __all__ = ['AdTrainer']
 
 class AdTrainer:
+    """
+        wrapping class for adversary training, including logging
+    """
     def __init__(self, loaders, net, optimizer, criterion=None, config=None, time_start=None):
         self.loaders = loaders
         self.net = net
@@ -44,15 +47,9 @@ class AdTrainer:
     def update(self, epoch, i):
         # make some logs
 
-        if hasattr(self, 'extra_metrics'):
-            # log for 'false' training stats
-            time_elapse = (time.time() - self.time_start)/60
-            logs_base = [epoch, i, self.__get_lr(), time_elapse]
-            logs_e = [_ for _ in logs_base]
-            logs_e.extend([self.meters[m].avg for m in self.extra_metrics]) # keep the order
-            self.logger_e.append(logs_e)
+        if self.extra_metrics:
+            self.extraLog.step(epoch, i)
 
-        ## per-example learned info
         if self.config.exTrack:
             self.exLog.step(epoch)
 
@@ -62,95 +59,32 @@ class AdTrainer:
         assert(epoch == self.epoch - 1), 'reset is not called after update!'
 
         ## reset some logger
-        if hasattr(self, 'extra_metrics'):
-            # reset meters
-            for m in self.meters:
-                self.meters[m].reset()
+        if self.extra_metrics:
+            self.extraLog.reset()
 
         if self.config.exTrack:
             self.exLog.reset()
 
-    def __ad_setup(self):
+    def close(self):
+        if self.extra_metrics:
+            self.extraLog.close()
 
-        base_names = ['Epoch', 'Mini-batch', 'lr', 'Time-elapse(Min)']
-        self.logger_e = Logger('log_extra.txt', title='log for deprecated metrics', resume=self.config.resume)
-
-        if not self.config.adversary:
-            self._loss = self._clean_loss
-
-            # log for sample robust correctness
-            if self.config.exTrack:
-                self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
-
-            # log for 'false' training loss and acc, aligned with previous work
-            self.extra_metrics = ['Train-Loss', 'Train-Acc']
-            self.logger_e.set_names(base_names + self.extra_metrics)
-            self.meters = dict([(m, AverageMeter()) for m in self.extra_metrics])
-            return
-
-
-        if self.config.adversary in ['gaussian', 'fgsm', 'pgd', 'aa']:
-            self._loss = self._ad_loss
-
-            # log for sample robust correctness
-            if self.config.exTrack:
-                self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
-
-            # log for 'false' training loss and acc, aligned with previous work
-            self.extra_metrics = ['Train-Loss', 'Train-Acc', 'Train-Loss-Ad', 'Train-Acc-Ad']
-            self.logger_e.set_names(base_names + self.extra_metrics)
-            self.meters = dict([(m, AverageMeter()) for m in self.extra_metrics])
-            return
-
-        # No extra logger: 'false' training accuracy not recorded for integrated loss - needs to code within specific loss function
-        # other things not supported currectly..
-        if self.config.target:
-            raise NotImplementedError('Targeted attack not supported! TODO..')
-
-        if self.config.adversary == 'trades':
-            self._loss = self._trades_loss
-        elif self.config.adversary == 'mart':
-            self._loss = self._mart_loss
-        elif self.config.adversary == 'fat':
-            self._loss = self._fat_loss
-        elif self.config.adversary == 'gairat':
-            self._loss = self._gairat_loss
-        else:
-            raise NotImplementedError(self.config.adversary)
-
-        if self.config.exTrack:
-            self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
-
-        self.extra_metrics = ['Train-Loss-Ad', 'Train-Acc-Ad']
-        self.logger_e.set_names(base_names + self.extra_metrics)
-        self.meters = dict([(m, AverageMeter()) for m in self.extra_metrics])
-
-        if self.config.exTrack:
-            raise NotImplementedError('Example tracking not supported! TODO..')
-
-        if self.config.adversary == 'llr':
-            self._loss = self._llr_loss
-            return
-
-        raise KeyError('Unexpected adversary %s' % self.config.adversary)
 
     def _clean_loss(self, inputs, labels, weights, epoch=None):
         outputs = self.net(inputs)
         loss = self.criterion(outputs, labels)
-        prec1, = accuracy(outputs.data, labels.data)
     
         # keep for record
-        self.meters['Train-Loss'].update(loss.mean().item(), inputs.size(0))
-        self.meters['Train-Acc'].update(prec1.item(), inputs.size(0))  # accuracy on clean data
+        if self.extra_metrics:
+            prec1, = accuracy(outputs.data, labels.data)
+            self.extraLog.update({'Train-Loss': loss.mean().item(),
+                                  'Train-Acc': prec1.item()},
+                                 inputs.size(0))
+
         if self.config.exTrack:
             self.exLog.update(outputs, labels, weights['index'].to(self.device), epoch=self.epoch)
-        return loss.mean()
 
-    def __get_pgd_alpha(self, pgd_iters, acc_radius=20.):
-        pgd_alphas = acc_radius / pgd_iters.float()
-        pgd_alphas = pgd_alphas.view(pgd_alphas.size(0), 1, 1, 1).to(self.device)
-        pgd_alphas = scale_step(pgd_alphas, dataset=self.config.dataset, device=self.device)
-        return pgd_alphas
+        return loss.mean()
 
     def _ad_loss(self, inputs, labels, weights, epoch=None):
 
@@ -163,10 +97,10 @@ class AdTrainer:
         # ------- ad loss
         self.net.eval()
         ctr = nn.CrossEntropyLoss() # Don't change the criterion in adversary generation part -- maybe change it later
-        inputs_ad = attack(self.net, ctr, inputs, labels, weight=eps_weight,
+        inputs_ad = attack(self.net, ctr, inputs, labels, weight=None,
                            adversary=self.config.adversary,
                            eps=self.config.eps,
-                           pgd_alpha=self.config.pgd_alph,
+                           pgd_alpha=self.config.pgd_alpha,
                            pgd_iter=self.config.pgd_iter,
                            randomize=self.config.rand_init,
                            target=self.target,
@@ -177,17 +111,104 @@ class AdTrainer:
 
         # -------- combine two loss
         loss *= (1 - self.config.alpha)
-        loss += alpha * loss_ad
+        loss += self.config.alpha * loss_ad
         loss = loss.mean()
 
         # -------- recording
-        prec1_ad, = accuracy(outputs_ad.data, labels.data)
-        self.meters['Train-Loss-Ad'].update(loss_ad.mean().item(), inputs.size(0))
-        self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
+        if self.extra_metrics:
+            prec1_ad, = accuracy(outputs_ad.data, labels.data)
+            self.extraLog.update({'Train-Loss-Ad': loss_ad.mean().item(),
+                                  'Train-Acc-Ad': prec1_ad.item()},
+                                 inputs.size(0))
+
         if self.config.exTrack:
             self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
 
         return loss
+
+    def _trades_loss(self, inputs, labels, weights, epoch=None):
+        loss, outputs_ad = trades_loss(self.net, inputs, labels, weights,
+                                      eps=self.config.eps,
+                                      alpha=self.config.pgd_alpha,
+                                      num_iter=self.config.pgd_iter,
+                                      norm='linf',
+                                      rand_init=self.config.rand_init,
+                                      config=self.config)
+
+        # -------- recording
+        if self.extra_metrics:
+            prec1_ad, = accuracy(outputs_ad.data, labels.data)
+            self.extraLog.update({'Train-Loss-Ad': loss_ad.mean().item(),
+                                  'Train-Acc-Ad': prec1_ad.item()},
+                                 inputs.size(0))
+
+        if self.config.exTrack:
+            # Generate ad examples using PGD, otherwise not fair!
+            outputs_ad = self.__get_pgd_ad(inputs, labels)
+            self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
+
+        return loss
+
+    def __ad_setup(self):
+        base_names = ['Epoch', 'Mini-batch', 'lr', 'Time-elapse(Min)']
+        self.logger_e = Logger('log_extra.txt', title='log for deprecated metrics', resume=self.config.resume)
+
+        if not self.config.adversary:
+            self._loss = self._clean_loss
+
+            # log for 'false' training loss and acc, aligned with previous work
+            self.extra_metrics = ['Train-Loss', 'Train-Acc']
+            self.extraLog = AvgTracker('log_extra',
+                                       self.optimizer,
+                                       metrics=self.extra_metrics,
+                                       time_start=self.time_start,
+                                       config=self.config)
+
+            # log for sample robust correctness
+            if self.config.exTrack:
+                self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
+
+            return
+
+
+        if self.config.adversary in ['gaussian', 'fgsm', 'pgd', 'aa']:
+            self._loss = self._ad_loss
+
+            # log for 'false' training loss and acc, aligned with previous work
+            self.extra_metrics = ['Train-Loss', 'Train-Acc', 'Train-Loss-Ad', 'Train-Acc-Ad']
+            self.extraLog = AvgTracker('log_extra',
+                                       self.optimizer,
+                                       metrics=self.extra_metrics,
+                                       time_start=self.time_start,
+                                       config=self.config)
+
+            # log for sample robust correctness
+            if self.config.exTrack:
+                self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
+
+            return
+
+        # other 
+        if self.config.target:
+            raise NotImplementedError('Targeted attack not supported! TODO..')
+
+        if self.config.adversary == 'trades':
+            self._loss = self._trades_loss
+
+            # log for 'false' training loss and acc, aligned with previous work
+            self.extra_metrics = ['Train-Loss-Ad', 'Train-Acc-Ad']
+            self.extraLog = AvgTracker('log_extra',
+                                       self.optimizer,
+                                       metrics=self.extra_metrics,
+                                       time_start=self.time_start,
+                                       config=self.config)
+
+            if self.config.exTrack:
+                self.exLog = ExampleTracker(self.loaders, resume=self.config.resume)
+
+            return
+
+        raise KeyError('Unexpected adversary %s' % self.config.adversary)
 
     def __get_pgd_ad(self, inputs, labels):
         self.net.eval()
@@ -205,105 +226,7 @@ class AdTrainer:
         self.net.train()
         return outputs_ad
 
-    def _trades_loss(self, inputs, labels, weights, epoch=None):
-        loss, outputs_ad = trades_loss(self.net, inputs, labels, weights,
-                                      eps=self.config.eps,
-                                      alpha=self.config.pgd_alpha,
-                                      num_iter=self.config.pgd_iter,
-                                      norm='linf',
-                                      rand_init=self.config.rand_init,
-                                      config=self.config)
-
-        # -------- recording
-        prec1_ad, = accuracy(outputs_ad.data, labels.data)
-        self.meters['Train-Loss-Ad'].update(loss.item(), inputs.size(0))
-        self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
-        if self.config.exTrack:
-            # Generate ad examples using PGD, otherwise not fair!
-            outputs_ad = self.__get_pgd_ad(inputs, labels)
-            self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
-
-        return loss
-
-    def _mart_loss(self, inputs, labels, weights, epoch=None):
-        loss, outputs_ad = mart_loss(self.net, inputs, labels, weights,
-                                     eps=self.config.eps,
-                                     alpha=self.config.pgd_alpha,
-                                     num_iter=self.config.pgd_iter,
-                                     norm='linf',
-                                     rand_init=self.config.rand_init,
-                                     config=self.config)
-
-        # -------- recording
-        prec1_ad, = accuracy(outputs_ad.data, labels.data)
-        self.meters['Train-Loss-Ad'].update(loss.item(), inputs.size(0))
-        self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
-        if self.config.exTrack:
-            self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
-
-        return loss
-
-    def __get_tau(self, epoch):
-        tau = self.config.fat_taus[0]
-        if epoch > self.config.fat_milestones[0]:
-            tau = self.config.fat_taus[1]
-        if epoch > self.config.fat_milestones[1]:
-            tau = self.config.fat_taus[2]
-        return tau
-
-    def _fat_loss(self, inputs, labels, weights, epoch=None):
-        tau = self.__get_tau(epoch)
-        loss, outputs_ad, ad_steps = fat_loss(self.net, inputs, labels, weights,
-                                              eps=self.config.eps,
-                                              alpha=self.config.pgd_alpha,
-                                              num_iter=self.config.pgd_iter,
-                                              tau=tau,
-                                              norm='linf',
-                                              rand_init=self.config.rand_init,
-                                              config=self.config)
-
-        prec1_ad, = accuracy(outputs_ad.data, labels.data)
-        self.meters['Train-Loss-Ad'].update(loss.item(), inputs.size(0))
-        self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
-        if self.config.exTrack:
-            self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch)
-
-        return loss
-
-    def _gairat_loss(self, inputs, labels, weights, epoch=None):
-        tau = self.__get_tau(epoch)
-        loss, outputs_ad, ad_steps = gairat_loss(self.net, inputs, labels, weights,
-                                                 eps=self.config.eps,
-                                                 alpha=self.config.pgd_alpha,
-                                                 num_iter=self.config.pgd_iter,
-                                                 tau=tau,
-                                                 norm='linf',
-                                                 rand_init=self.config.rand_init,
-                                                 config=self.config)
-
-        prec1_ad, = accuracy(outputs_ad.data, labels.data)
-        self.meters['Train-Loss-Ad'].update(loss.item(), inputs.size(0))
-        self.meters['Train-Acc-Ad'].update(prec1_ad.item(), inputs.size(0))
-        if self.config.exTrack:
-            self.exLog.update(outputs_ad, labels, weights['index'].to(self.device), epoch=self.epoch, ad_steps=ad_steps)
-
-        return loss
-
-    def _llr_loss(self, inputs, labels, weights, epoch=None):
-        loss = llr_loss(self.net, inputs, labels,
-                        eps=self.config.eps,
-                        alpha=self.config.pgd_alpha,
-                        num_iter=self.config.pgd_iter,
-                        norm='linf',
-                        rand_init=self.config.rand_init,
-                        config=self.config)
-        return loss
-
     def __get_lr(self):
         lrs = [param_group['lr'] for param_group in self.optimizer.param_groups]
         assert(len(lrs) == 1)
         return lrs[0]
-
-    def close(self):
-        if hasattr(self, 'logger_e'):
-            self.logger_e.close()

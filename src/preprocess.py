@@ -66,7 +66,7 @@ def get_loaders(dataset='cifar10', batch_size=128,
                 trainsize=None, testsize=None, 
                 trainsubids=None, testsubids=None,
                 weights={},
-                data_dir='/home/jingbo/chengyu/Initialization/data',
+                data_dir='./data',
                 n_workers=4, download=False, config=None):
 
     if dataset == 'mnist':
