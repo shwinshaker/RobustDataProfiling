@@ -1,12 +1,11 @@
 # RobustDataProfiling
 
 * We propose a generic method to improve robustness for adversarial training -- remove problematic data
+* We show the data quality plays an important role in adversarial training. It is correlated with the robustness-accuracy trade-off, robust overfitting and gradient masking.
 * See more analyses in our paper
-
   > [Data Profiling for Adversarial Training: On the Ruin of Problematic Data](https://arxiv.org/abs/2102.07437)
 
 ## Install
-
 * Install [PyTorch](http://pytorch.org/)
 * Clone recursively
 
@@ -15,7 +14,6 @@
   ```
 
 ## Setup
-
 * By default, build a `./data` directory which includes the datasets
 * By default, build a `./checkpoints` directory to save the training output
 
@@ -26,7 +24,6 @@
 
 
 ## Estimate problematic rank
-
 * Set `exTrack` to `True` in `config.yaml`
 * Conduct adversarial training
 * `count_wrong.npy` will be generated in the checkpoint directory, which records the number of epochs that every example is misclassified under adversarial attacks during training (Learning instability)
@@ -47,7 +44,6 @@
 * An estimation of the normalized problematic rank averaged by 10 repeated experiments with random intialization (PGD-10 training for pre-activation ResNet-18) has been pre-calculated in `prob_rank.npy`
 
 ## Adversarial training on friendly data only
-
 * Select the top k friendly examples based on problematic rank estimation
 
   ```
