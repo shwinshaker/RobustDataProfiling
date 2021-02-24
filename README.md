@@ -25,7 +25,7 @@
 ```
 
 
-##Estimate problematic rank
+## Estimate problematic rank
 
 * Set `exTrack` to `True` in `config.yaml`
 * Conduct adversarial training
@@ -48,7 +48,7 @@
 
 ## Adversarial training on friendly data only
 
-* Select the top $k$ friendly examples based on problematic rank estimation
+* Select the top $$k$$ friendly examples based on problematic rank estimation
 
   ```
   import numpy as np
